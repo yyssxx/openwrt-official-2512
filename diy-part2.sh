@@ -1,12 +1,14 @@
-
 #!/bin/bash
 #
-# diy-part2.sh（官方 OpenWrt 25.12 树专用，probe3）：feeds install 之后、defconfig 之前执行
+# diy-part2.sh（官方 OpenWrt 25.12 树专用，probe5）：feeds install 之后、defconfig 之前执行
 # probe1（2026-11-15）实证——golang 的包链接因上游改版式而悬空、静默失效；
 # probe2 把链接目标修对（lang/golang/golang）后仍死在 xray-core：包选对了
 # （csw golang 1.27.3 确实编了），但 xray-core 的 Makefile 写死了引用官方源的
 # golang-package.mk（见 1e 段），工具链由那份 .mk 按官方默认版本 1.24.13 选，
 # 与包覆盖是两条线。probe3 在 probe2 基础上加 1e 段改写该引用，其余不变。
+# probe4 = probe3 + 种子补传（种子此前漏传，三炉白跑）：构建一路走到
+# package/compile 深处，只剩 vlmcsd 在 apk 打包步被拒（见 1f 段）。
+# probe5 在 probe3 基础上加 1f 段给 vlmcsd 覆写 apk 版本号，其余不变。
 
 # 1) 把 golang + xray-core 换成 coolsnowwolf/packages 的版本。
 #    教训（2026-11-10）：./scripts/feeds install -f -p 在本流程里实测无效——首跑
@@ -51,6 +53,19 @@ done
 XRAY_MK="feeds/cswpackages/net/xray-core/Makefile"
 sed -i 's|$(TOPDIR)/feeds/packages/lang/golang/golang-package.mk|$(TOPDIR)/feeds/cswpackages/lang/golang/golang-package.mk|' "$XRAY_MK"
 grep -qF 'feeds/cswpackages/lang/golang/golang-package.mk' "$XRAY_MK" || { echo "ERROR: xray-core 的 golang-package.mk 引用改写失败"; exit 1; }
+
+# 1f) vlmcsd 的 apk 版本号覆写（probe4 实证新增）：csw 的 vlmcsd
+#     PKG_VERSION:=svn1113（opkg 时代无碍），25.12 的 apk 对版本号校验
+#     严于 opkg——必须数字开头，"svn1113-r5" 在 apk mkpkg 步被当场拒
+#     （ERROR: info field 'version' has invalid value）。PKG_VERSION 本身
+#     还兼作源码 tag（下载地址 tar.gz/svn1113），不能直接改；改走包定义
+#     里的 VERSION 覆写（include/package-defaults.mk 的默认
+#     VERSION:=$(PKG_VERSION)-r$(PKG_RELEASE) 可被包自己的 define 覆盖，
+#     package-pack.mk 的 mkpkg --info version:$(VERSION) 吃的就是它），
+#     源码抓取与构建目录一律不动，只让最终包版本变成 1113-r5。
+VLMCSD_MK="feeds/cswpackages/net/vlmcsd/Makefile"
+sed -i 's|^define Package/vlmcsd$|define Package/vlmcsd\n\tVERSION:=1113-r$(PKG_RELEASE)|' "$VLMCSD_MK"
+grep -qF 'VERSION:=1113-r$(PKG_RELEASE)' "$VLMCSD_MK" || { echo "ERROR: vlmcsd 的 VERSION 覆写失败"; exit 1; }
 
 # 1c) lede 独有的 LuCI 小应用（run 7 起只剩三个）已改走 diy-part1 登记的
 #     ledeapps 本地源（src-link），feeds install 会把它们链进
