@@ -1,10 +1,12 @@
+
 #!/bin/bash
 #
-# diy-part2.sh（官方 OpenWrt 25.12 树专用，probe2）：feeds install 之后、defconfig 之前执行
-# 与 24.10 run7 版的唯一实质差别在第 1 段的 golang 链接目标（见该段注释）：
-# probe1（2026-11-15）实证——手工符号链接覆盖在 apk 时代照样是构建期的选包
-# 机制（xray-core 覆盖生效），但 golang 的链接因上游改版式而悬空、静默失效，
-# 整炉死在 xray-core 编译（go.mod 要 go>=1.27，实际用了官方 go 1.24.13）。
+# diy-part2.sh（官方 OpenWrt 25.12 树专用，probe3）：feeds install 之后、defconfig 之前执行
+# probe1（2026-11-15）实证——golang 的包链接因上游改版式而悬空、静默失效；
+# probe2 把链接目标修对（lang/golang/golang）后仍死在 xray-core：包选对了
+# （csw golang 1.27.3 确实编了），但 xray-core 的 Makefile 写死了引用官方源的
+# golang-package.mk（见 1e 段），工具链由那份 .mk 按官方默认版本 1.24.13 选，
+# 与包覆盖是两条线。probe3 在 probe2 基础上加 1e 段改写该引用，其余不变。
 
 # 1) 把 golang + xray-core 换成 coolsnowwolf/packages 的版本。
 #    教训（2026-11-10）：./scripts/feeds install -f -p 在本流程里实测无效——首跑
@@ -38,6 +40,18 @@ for p in xray-core golang vlmcsd luci-app-iptv; do
   test -f "package/feeds/cswpackages/$p/Makefile" || { echo "ERROR: cswpackages/$p 覆盖链接失效（目标 Makefile 不存在）"; exit 1; }
 done
 
+# 1e) xray-core 的工具链引用改写（probe2 实证新增）：csw 的 xray-core Makefile
+#     写死 include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk——
+#     这行是按 lede 写的（在 lede 里 feeds/packages 就是 csw 本人，无碍）；
+#     在官方树里 feeds/packages 是官方源，它那份新版 .mk 会把 PATH 指到官方
+#     默认版本的工具链目录（25.12 默认 go 1.24.13），xray 的 go.mod 要
+#     >=1.27，当场编死——包覆盖选对 csw golang 也没用，.mk 是另一条线。
+#     改指 csw 自己的 golang-package.mk，恢复 lede 里的同款搭配
+#     （csw xray + csw .mk + csw golang 1.27.3，D2 那边天天在编）。
+XRAY_MK="feeds/cswpackages/net/xray-core/Makefile"
+sed -i 's|$(TOPDIR)/feeds/packages/lang/golang/golang-package.mk|$(TOPDIR)/feeds/cswpackages/lang/golang/golang-package.mk|' "$XRAY_MK"
+grep -qF 'feeds/cswpackages/lang/golang/golang-package.mk' "$XRAY_MK" || { echo "ERROR: xray-core 的 golang-package.mk 引用改写失败"; exit 1; }
+
 # 1c) lede 独有的 LuCI 小应用（run 7 起只剩三个）已改走 diy-part1 登记的
 #     ledeapps 本地源（src-link），feeds install 会把它们链进
 #     package/feeds/ledeapps/，这里不再做任何拷贝——v2/v3 在此处 cp -r 的
@@ -58,4 +72,3 @@ sed -i 's/192.168.1.1/192.168.31.1/g' package/base-files/files/bin/config_genera
 
 # 3) 注意：lede 版 diy-part2 里给 filogic.mk 打的 factory.ubi 补丁不要带过来——
 #    官方树的设备定义自带 ARTIFACTS/initramfs-factory.ubi，构建会原生出 factory.ubi。
-
