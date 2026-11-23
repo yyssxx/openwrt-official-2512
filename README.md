@@ -2,7 +2,7 @@
 
 基于**官方 OpenWrt 25.12**（`openwrt/openwrt` 的 `openwrt-25.12` 分支）为小米路由器 AX3000T（RD03，联发科 MT7981B / mediatek-filogic）定制的固件，GitHub Actions 云编译。
 
-**当前状态**：2026-11-16 的 Release 已刷入实机日常运行，编译暂时暂停——没有「封版」一说，哪天想动随时重开。
+**当前状态**：2026-11-16 的 Release 已刷入实机日常运行。
 
 ## 当前版本
 
